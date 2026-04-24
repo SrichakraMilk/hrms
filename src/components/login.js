@@ -79,7 +79,7 @@ export default function Login() {
             Welcome Back
           </h1>
           <p className="text-gray-500 text-sm mt-1">
-            Sign in to manage your store
+            Sign in 
           </p>
         </div>
 
