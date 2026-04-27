@@ -1,12 +1,12 @@
-import Login from '@/components/login'
-import React from 'react'
+import Login from "@/components/login";
+import React from "react";
 
-function index() {
+function Index() {
   return (
-    <div>
-      <Login/>
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <Login />
     </div>
-  )
+  );
 }
 
-export default index
+export default Index;
