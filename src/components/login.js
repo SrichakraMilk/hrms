@@ -30,6 +30,11 @@ const handleSubmit = async (e) => {
     });
 
     const data = await res.json();
+    // Inside handleSubmit after 'const data = await res.json();'
+    if (data.user) {
+      // Save the specific userid (e.g., "Security") to localStorage
+      localStorage.setItem("user_role", data.user.userid);
+    }
 
     if (!res.ok) {
       throw new Error(data.message || "Invalid ID or Password");

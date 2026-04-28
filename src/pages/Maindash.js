@@ -8,12 +8,17 @@ import RegisterEmpTile from "@/components/registeremp";
 import ReportsTile from "@/components/reports";
 
 export default function MainDash() {
-  // Mock role for testing; will be replaced by API/localStorage later
-  const [userRole, setUserRole] = useState("Admin");
+  // Initialize as null to prevent flickering before useEffect runs
+  const [userRole, setUserRole] = useState("Loading...");
 
   useEffect(() => {
     const savedRole = localStorage.getItem("user_role");
-    if (savedRole) setUserRole(savedRole);
+    // If it's "Security", React will automatically hide the other tiles below
+    if (savedRole) {
+      setUserRole(savedRole);
+    } else {
+      setUserRole("Guest");
+    }
   }, []);
 
   return (
@@ -21,7 +26,6 @@ export default function MainDash() {
       <Header />
 
       <main className="flex-1 px-7 pt-10 pb-20">
-        {/* --- WELCOME & ROLE SECTION --- */}
         <div className="mb-10 ml-1">
           <h1 className="text-3xl font-[900] text-gray-900 tracking-tight leading-none">
             Dashboard
@@ -34,40 +38,35 @@ export default function MainDash() {
           </div>
         </div>
 
-        {/* --- MODULE GRID --- */}
-        {/* 'grid-cols-2' ensures a perfect two-column layout on mobile */}
         <div className="grid grid-cols-2 gap-5 w-full max-w-md mx-auto">
-          {/* 1. ATTENDANCE: Accessible by ALL Roles */}
+          {/* 1. ATTENDANCE: Always visible */}
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
             <AttendanceSystem />
           </div>
 
-          {/* 2. REGISTER EMPLOYEE: HR and Admin Only */}
+          {/* 2. REGISTER: ONLY HR or Admin */}
           {["HR", "Admin"].includes(userRole) && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-              <RegisterEmpTile
-                onClick={() => console.log("Register Clicked")}
-              />
+              <RegisterEmpTile />
             </div>
           )}
 
-          {/* 3. SHIFT MANAGEMENT: Everyone except Security */}
-          {userRole !== "Security" && (
+          {/* 3. SHIFTS: ONLY HR, Admin, or Manager (Explicitly excludes Security) */}
+          {["HR", "Admin", "Manager"].includes(userRole) && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-1000">
-              <ShiftMgmtTile onClick={() => console.log("Shifts Clicked")} />
+              <ShiftMgmtTile />
             </div>
           )}
 
-          {/* 4. REPORTS: Admin, CEO, and Plant Manager */}
+          {/* 4. REPORTS: ONLY Admin, CEO, or Plant Manager */}
           {["Admin", "CEO", "Plant Manager"].includes(userRole) && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-100">
-              <ReportsTile onClick={() => console.log("Reports Clicked")} />
+              <ReportsTile />
             </div>
           )}
         </div>
       </main>
 
-      {/* Optional: Simple bottom footer for APK feel */}
       <footer className="p-6 text-center"></footer>
     </div>
   );

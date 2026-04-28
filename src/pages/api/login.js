@@ -8,7 +8,7 @@ export default async function handler(req, res) {
     const { agent, password } = req.body;
 
     const response = await fetch(
-      "https://production.srichakramilk.com/api/auth/agent-login",
+      "https://production.srichakramilk.com/api/auth/login",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
