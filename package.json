@@ -9,10 +9,12 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "face-api.js": "^0.22.2",
     "lucide-react": "^1.9.0",
     "next": "latest",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "sweetalert2": "^11.26.24"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

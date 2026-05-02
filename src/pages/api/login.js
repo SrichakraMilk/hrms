@@ -12,9 +12,12 @@ export default async function handler(req, res) {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // Map 'agent' variable to the 'identifier' key
         body: JSON.stringify({
+          // Send all possible key variations to ensure the backend accepts it
           identifier: agent,
+          agent: agent,
+          userid: agent,
+          email: agent,
           password: password,
         }),
       },

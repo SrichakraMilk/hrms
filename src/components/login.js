@@ -13,45 +13,48 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  setIsLoading(true);
-  setError("");
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError("");
 
-  try {
-    // Calling your own Next.js API proxy to avoid CORS issues
-    const res = await fetch("/api/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        agent: agentId.trim(),
-        password: password,
-      }),
-    });
+    try {
+      // Calling your own Next.js API proxy to avoid CORS issues
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agent: agentId.trim(),
+          password: password,
+        }),
+      });
 
-    const data = await res.json();
-    // Inside handleSubmit after 'const data = await res.json();'
-    if (data.user) {
-      // Save the specific userid (e.g., "Security") to localStorage
-      localStorage.setItem("user_role", data.user.userid);
+      const data = await res.json();
+      // Inside handleSubmit after 'const data = await res.json();'
+      if (data.user) {
+        // Save the specific userid (e.g., "Security") to localStorage
+        localStorage.setItem("user_role", data.user.userid);
+      }
+
+      if (!res.ok) {
+        throw new Error(data.message || "Invalid ID or Password");
+      }
+
+      // Store the token and profile for PWA persistence
+      if (data.token) localStorage.setItem("auth_token", data.token);
+      const validToken = data.token || data.accessToken || data.user?.token;
+      if (validToken) localStorage.setItem("auth_token", validToken);
+      localStorage.setItem("user_data", JSON.stringify(data));
+      localStorage.setItem("user_role", data.agent.role.name);
+
+      // Success! Move to the Dashboard
+      router.push("/Maindash");
+    } catch (err) {
+      setError(err.message || "Connection failed. Please check your internet.");
+    } finally {
+      setIsLoading(false);
     }
-
-    if (!res.ok) {
-      throw new Error(data.message || "Invalid ID or Password");
-    }
-
-    // Store the token and profile for PWA persistence
-    if (data.token) localStorage.setItem("auth_token", data.token);
-    localStorage.setItem("user_data", JSON.stringify(data));
-
-    // Success! Move to the Dashboard
-    router.push("/Maindash");
-  } catch (err) {
-    setError(err.message || "Connection failed. Please check your internet.");
-  } finally {
-    setIsLoading(false);
-  }
-};
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-6 py-8">
@@ -63,6 +66,7 @@ const handleSubmit = async (e) => {
               alt="Logo"
               fill
               className="object-contain"
+              sizes="96px"
               priority
             />
           </div>
