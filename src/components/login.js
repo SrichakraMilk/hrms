@@ -30,22 +30,27 @@ export default function Login() {
       });
 
       const data = await res.json();
-      // Inside handleSubmit after 'const data = await res.json();'
-      if (data.user) {
-        // Save the specific userid (e.g., "Security") to localStorage
-        localStorage.setItem("user_role", data.user.userid);
-      }
 
       if (!res.ok) {
         throw new Error(data.message || "Invalid ID or Password");
       }
 
-      // Store the token and profile for PWA persistence
-      if (data.token) localStorage.setItem("auth_token", data.token);
-      const validToken = data.token || data.accessToken || data.user?.token;
+      // Resolve the authenticated user object (backend may return .agent or .user)
+      const authUser = data.agent || data.user || {};
+
+      // Store token
+      const validToken = data.token || data.accessToken || authUser?.token;
       if (validToken) localStorage.setItem("auth_token", validToken);
+
+      // Store full session data
       localStorage.setItem("user_data", JSON.stringify(data));
-      localStorage.setItem("user_role", data.agent.role.name);
+
+      // Store user details directly so attendance markedBy resolves cleanly
+      localStorage.setItem("user_details", JSON.stringify(authUser));
+
+      // Store role name for dashboard gating
+      const roleName = authUser?.role?.name || authUser?.role || "Guest";
+      localStorage.setItem("user_role", roleName);
 
       // Success! Move to the Dashboard
       router.push("/Maindash");

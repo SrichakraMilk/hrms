@@ -28,6 +28,40 @@ export default function AttendanceSystem() {
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+  const isSwitchingRef = useRef(false); // guard against double-tap
+
+  /** Fully release the active camera stream. */
+  const releaseStream = () => {
+    if (videoRef.current) {
+      videoRef.current.srcObject = null; // detach first so browser frees hardware ref
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+  };
+
+  /** Open camera with the given facingMode, retrying with relaxed constraints if needed. */
+  const openCamera = async (facing) => {
+    // Try strict 'exact' first — routes directly to the target lens on mobile
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { exact: facing }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) videoRef.current.srcObject = stream;
+      return;
+    } catch {
+      // exact failed (common on iOS simulator / single-cam devices) — fall through
+    }
+
+    // Retry with soft constraint (no 'exact')
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 640 } },
+    });
+    streamRef.current = stream;
+    if (videoRef.current) videoRef.current.srcObject = stream;
+  };
 
   // --- 1. START TERMINAL ---
   const startTerminal = async (punchMode) => {
@@ -44,21 +78,8 @@ export default function AttendanceSystem() {
         faceapi.nets.faceRecognitionNet.loadFromUri(URL),
       ]);
 
-      // 1. Clear existing stream Ref to avoid parallel access
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: facingMode, // Uses the current state
-          width: { ideal: 640 },
-          height: { ideal: 640 },
-        },
-      });
-      streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
+      releaseStream();
+      await openCamera(facingMode);
     } catch (err) {
       setError("Camera blocked or models missing.");
     }
@@ -66,36 +87,31 @@ export default function AttendanceSystem() {
 
   // --- CAMERA SWITCH LOGIC ---
   const toggleCamera = async () => {
-    if (isProcessing) return;
+    if (isProcessing || isSwitchingRef.current) return;
+    isSwitchingRef.current = true;
 
-    // 1. Force release hardware immediately
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
+    const newFacing = facingMode === "user" ? "environment" : "user";
+    setFacingMode(newFacing);
+    setError("");
 
-    // 2. Update state to trigger restart
-    const newMode = facingMode === "user" ? "environment" : "user";
-    setFacingMode(newMode);
+    // Step 1: Fully release the current hardware stream
+    releaseStream();
 
+    // Step 2: Wait for the OS to fully free the camera sensor
+    await new Promise((r) => setTimeout(r, 400));
+
+    // Step 3: Open the new camera
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: newMode,
-          width: { ideal: 640 },
-          height: { ideal: 640 },
-        },
-      });
-      streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
+      await openCamera(newFacing);
     } catch (err) {
-      setError("Camera blocked or unavailable.");
+      setError("Could not switch camera. Please try again.");
+    } finally {
+      isSwitchingRef.current = false;
     }
   };
 
   const resetToSelection = () => {
-    if (streamRef.current)
-      streamRef.current.getTracks().forEach((t) => t.stop());
+    releaseStream();
     setView("dashboard");
     setShowSelection(true);
     setScannedUser(null);

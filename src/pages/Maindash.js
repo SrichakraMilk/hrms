@@ -65,6 +65,7 @@ export default function MainDash() {
             </div>
           )}
         </div>
+
       </main>
 
       <footer className="p-6 text-center"></footer>
