@@ -100,6 +100,24 @@ export default function RegisterEmpTile() {
     if (isOpen) init();
   }, [isOpen]);
 
+  // Start camera when entering Step 2 (Capture)
+  useEffect(() => {
+    if (step === 2) {
+      const startCamera = async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "user" },
+          });
+          streamRef.current = stream;
+          if (videoRef.current) videoRef.current.srcObject = stream;
+        } catch (err) {
+          setError("Camera access denied or unavailable.");
+        }
+      };
+      startCamera();
+    }
+  }, [step]);
+
   const stopStream = () => {
     if (streamRef.current)
       streamRef.current.getTracks().forEach((t) => t.stop());
@@ -112,9 +130,13 @@ export default function RegisterEmpTile() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       streamRef.current = stream;
+
+      await new Promise((r) => setTimeout(r, 100));
       if (videoRef.current) videoRef.current.srcObject = stream;
 
       await new Promise((r) => setTimeout(r, 1500));
+
+      if (!videoRef.current) throw new Error("Camera not initialized.");
 
       const detection = await faceapi
         .detectSingleFace(videoRef.current)
@@ -178,6 +200,8 @@ export default function RegisterEmpTile() {
     setIsRegistering(true);
     setError("");
     try {
+      if (!videoRef.current) throw new Error("Camera not initialized.");
+
       const detection = await faceapi
         .detectSingleFace(videoRef.current)
         .withFaceLandmarks()
@@ -202,8 +226,10 @@ export default function RegisterEmpTile() {
         },
       );
 
-      if (res.ok) setStep(3);
-      else throw new Error("Server rejected enrollment.");
+      if (res.ok) {
+        stopStream();
+        setStep(3);
+      } else throw new Error("Server rejected enrollment.");
     } catch (err) {
       setError(err.message);
     } finally {

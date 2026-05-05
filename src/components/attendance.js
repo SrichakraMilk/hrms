@@ -69,6 +69,8 @@ export default function AttendanceSystem() {
     setError("");
 
     try {
+      if (!videoRef.current) throw new Error("Camera not initialized.");
+
       // 1. Capture Face
       const detection = await faceapi
         .detectSingleFace(
@@ -192,7 +194,7 @@ export default function AttendanceSystem() {
               <div className="flex items-center justify-between mb-8">
                 <div>
                   <h2 className="text-2xl font-black text-gray-900 tracking-tight">
-                    Attendance 
+                    Attendance
                   </h2>
                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">
                     Select Action
@@ -262,7 +264,8 @@ export default function AttendanceSystem() {
           <div className="w-full flex justify-between items-center">
             <button
               onClick={resetToSelection}
-              className="p-3 bg-gray-50 rounded-2xl text-gray-400"
+              disabled={isProcessing}
+              className="p-3 bg-gray-50 rounded-2xl text-gray-400 disabled:opacity-50"
             >
               <ArrowLeft size={20} />
             </button>
