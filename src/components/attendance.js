@@ -24,6 +24,7 @@ export default function AttendanceSystem() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [scannedUser, setScannedUser] = useState(null);
   const [error, setError] = useState("");
+  const [facingMode, setFacingMode] = useState("user");
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -43,13 +44,40 @@ export default function AttendanceSystem() {
         faceapi.nets.faceRecognitionNet.loadFromUri(URL),
       ]);
 
+      // Release current stream if any before starting a new one
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: 640, height: 640 },
+        video: { facingMode: facingMode, width: 640, height: 640 },
       });
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
     } catch (err) {
       setError("Camera blocked or models missing.");
+    }
+  };
+
+  // --- CAMERA SWITCH LOGIC ---
+  const toggleCamera = async () => {
+    if (isProcessing) return;
+    const newMode = facingMode === "user" ? "environment" : "user";
+    setFacingMode(newMode);
+
+    // Release current tracks
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: newMode, width: 640, height: 640 },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) videoRef.current.srcObject = stream;
+    } catch (err) {
+      setError("Camera blocked or unavailable.");
     }
   };
 
@@ -86,22 +114,43 @@ export default function AttendanceSystem() {
         return;
       }
 
-      // 2. Prepare Payload
+      // 2. Prepare Payload & Auth
       const token = localStorage.getItem("auth_token");
-      const currentUser = JSON.parse(
-        localStorage.getItem("user_details") || "{}",
-      );
+      let currentUser = {};
+
+      try {
+        const ud = localStorage.getItem("user_details");
+        if (ud && ud !== "undefined") currentUser = JSON.parse(ud);
+
+        // Fallback for PWA persistence
+        if (!currentUser._id) {
+          const udata = localStorage.getItem("user_data");
+          if (udata && udata !== "undefined") {
+            const parsed = JSON.parse(udata);
+            currentUser = parsed.user || parsed.agent || {};
+          }
+        }
+      } catch (e) {
+        console.warn("Storage parse error:", e);
+      }
+
+      // --- CRITICAL FIX: Ensure plant is a String ID, not an Object ---
+      const plantId =
+        currentUser.plant?.id ||
+        currentUser.plant?._id ||
+        currentUser.plant ||
+        currentUser.plantId;
 
       const payload = {
-        descriptor: Array.from(detection.descriptor), // Must be a flat array
+        descriptor: Array.from(detection.descriptor),
         checkType: mode.toLowerCase(), // "in" or "out"
-        plant: currentUser.plantId || "656da6f8e7b3a1c2d3e4f5a6",
+        plant: plantId,
         markedBy: currentUser._id,
       };
 
-      console.log(" Sending Payload:", payload);
+      console.log("Sending Verified Payload:", payload);
 
-      // 3. API Call
+      // 3. API Call to Production
       const res = await fetch(
         "https://production.srichakramilk.com/api/hr/face/verify",
         {
@@ -114,13 +163,10 @@ export default function AttendanceSystem() {
         },
       );
 
-      // 4. Handle 500 or Other Errors WITHOUT crashing
       if (!res.ok) {
-        const errorText = await res.text();
-        console.error("❌ Backend Error:", errorText);
-
-        // Throw an error so the catch block handles the UI reset
-        throw new Error("Match failed on server.");
+        const errorData = await res.json();
+        console.error("❌ Backend Error:", errorData);
+        throw new Error(errorData.error || "Match failed on server.");
       }
 
       const data = await res.json();
@@ -128,14 +174,22 @@ export default function AttendanceSystem() {
       if (data.employee) {
         setScannedUser(data.employee);
 
-        // Show SweetAlert Identity
         Swal.fire({
-          title: `<span style="font-weight:900;">PUNCH ${mode} SUCCESS</span>`,
-          html: `<h2 style="color: #028bcc; font-weight: 900;">${data.employee.name}</h2>`,
-          icon: "success",
+          icon: undefined,
+          title: `<div style="font-weight:900; color:${mode === "IN" ? "#10b981" : "#ef4444"}; font-size: 1.25rem; letter-spacing: -0.025em; margin-top: 10px;">PUNCH ${mode} SUCCESS</div>`,
+          html: `
+            <div style="margin-top: 8px;">
+              <span style="color: #028bcc; font-weight: 900; font-size: 1.5rem; text-transform: capitalize;">
+                ${data.employee.name}
+              </span>
+            </div>
+          `,
           timer: 2000,
           showConfirmButton: false,
-          customClass: { popup: "rounded-[2.5rem]" },
+          background: "#ffffff",
+          customClass: {
+            popup: "rounded-[3rem] shadow-2xl border-none p-10",
+          },
         });
 
         setView("success");
@@ -147,25 +201,24 @@ export default function AttendanceSystem() {
         }, 3000);
       }
     } catch (err) {
-      console.error("💥 UI Crash Prevented:", err.message);
-      setError("Face not recognized or Server Error.");
-
-      // Stop the spinner so the guard knows it failed
+      console.error("💥 Attendance Error:", err.message);
+      setError(err.message || "Face not recognized.");
       setIsProcessing(false);
 
       Swal.fire({
         title: "SCAN FAILED",
-        text: "Could not find a matching face in the database.",
+        text: err.message.includes("ObjectId")
+          ? "System configuration error (Plant ID)."
+          : "No matching face found.",
         icon: "error",
         confirmButtonColor: "#028bcc",
       });
     } finally {
-      // Ensure we don't stay in a loading state
       setIsProcessing(false);
     }
   };
 
-  // --- DASHBOARD VIEW ---
+  // Dashboard logic remains the same...
   if (view === "dashboard") {
     return (
       <>
@@ -189,20 +242,15 @@ export default function AttendanceSystem() {
         </div>
 
         {showSelection && (
-          <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-gray-900/40 backdrop-blur-sm animate-in fade-in duration-300">
-            <div className="w-full max-w-md bg-white rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl p-8 animate-in slide-in-from-bottom-10 duration-300 mb-0 sm:mb-8">
+          <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-gray-900/40 backdrop-blur-sm">
+            <div className="w-full max-w-md bg-white rounded-t-[2.5rem] sm:rounded-[2.5rem] p-8 animate-in slide-in-from-bottom-10 duration-300">
               <div className="flex items-center justify-between mb-8">
-                <div>
-                  <h2 className="text-2xl font-black text-gray-900 tracking-tight">
-                    Attendance
-                  </h2>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">
-                    Select Action
-                  </p>
-                </div>
+                <h2 className="text-2xl font-black text-gray-900 tracking-tight">
+                  Attendance
+                </h2>
                 <button
                   onClick={() => setShowSelection(false)}
-                  className="p-3 bg-gray-50 rounded-full text-gray-400 hover:bg-gray-100 transition-colors active:scale-95"
+                  className="p-3 bg-gray-50 rounded-full text-gray-400"
                 >
                   <X size={24} />
                 </button>
@@ -214,37 +262,36 @@ export default function AttendanceSystem() {
                     setShowSelection(false);
                     startTerminal("IN");
                   }}
-                  className="w-full group p-6 bg-green-50/50 border-2 border-transparent hover:border-green-500 rounded-[2rem] flex items-center gap-6 transition-all active:scale-95"
+                  className="w-full p-6 bg-green-50/50 border-2 border-transparent hover:border-green-500 rounded-[2rem] flex items-center gap-6"
                 >
-                  <div className="w-14 h-14 bg-green-100 rounded-2xl flex items-center justify-center text-green-600 group-hover:bg-green-600 group-hover:text-white transition-colors">
+                  <div className="w-14 h-14 bg-green-100 rounded-2xl flex items-center justify-center text-green-600">
                     <LogIn size={28} />
                   </div>
                   <div className="text-left">
                     <h4 className="text-lg font-black text-gray-900">
                       Shift In
                     </h4>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">
-                      Entry Registration
+                    <p className="text-[10px] font-bold text-gray-400 uppercase">
+                      Entry
                     </p>
                   </div>
                 </button>
-
                 <button
                   onClick={() => {
                     setShowSelection(false);
                     startTerminal("OUT");
                   }}
-                  className="w-full group p-6 bg-red-50/50 border-2 border-transparent hover:border-red-500 rounded-[2rem] flex items-center gap-6 transition-all active:scale-95"
+                  className="w-full p-6 bg-red-50/50 border-2 border-transparent hover:border-red-500 rounded-[2rem] flex items-center gap-6"
                 >
-                  <div className="w-14 h-14 bg-red-100 rounded-2xl flex items-center justify-center text-red-600 group-hover:bg-red-600 group-hover:text-white transition-colors">
+                  <div className="w-14 h-14 bg-red-100 rounded-2xl flex items-center justify-center text-red-600">
                     <LogOut size={28} />
                   </div>
                   <div className="text-left">
                     <h4 className="text-lg font-black text-gray-900">
                       Shift Out
                     </h4>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">
-                      Exit Registration
+                    <p className="text-[10px] font-bold text-gray-400 uppercase">
+                      Exit
                     </p>
                   </div>
                 </button>
@@ -258,14 +305,13 @@ export default function AttendanceSystem() {
 
   return (
     <div className="fixed inset-0 bg-white z-[100] flex flex-col animate-in slide-in-from-bottom duration-300">
-      {/* CAMERA VIEW */}
       {view === "camera" && (
         <div className="flex-1 flex flex-col items-center justify-between py-12 px-8">
           <div className="w-full flex justify-between items-center">
             <button
               onClick={resetToSelection}
               disabled={isProcessing}
-              className="p-3 bg-gray-50 rounded-2xl text-gray-400 disabled:opacity-50"
+              className="p-3 bg-gray-50 rounded-2xl text-gray-400"
             >
               <ArrowLeft size={20} />
             </button>
@@ -274,7 +320,13 @@ export default function AttendanceSystem() {
             >
               Mode: {mode}
             </div>
-            <div className="w-10"></div>
+            <button
+              onClick={toggleCamera}
+              disabled={isProcessing}
+              className="p-3 bg-gray-50 rounded-2xl text-gray-400 active:scale-95 transition-all"
+            >
+              <RefreshCw size={20} />
+            </button>
           </div>
 
           <div className="relative w-80 h-80 rounded-full border-[8px] border-gray-50 overflow-hidden bg-black shadow-2xl">
@@ -284,9 +336,6 @@ export default function AttendanceSystem() {
               playsInline
               muted
               className="w-full h-full object-cover scale-x-[-1]"
-            />
-            <div
-              className={`absolute inset-0 border-4 rounded-full ${isProcessing ? "border-[#028bcc] border-dashed animate-spin" : "border-white/20"}`}
             />
             {isProcessing && (
               <div className="absolute inset-0 bg-[#028bcc]/20 backdrop-blur-[2px] flex items-center justify-center">
@@ -325,13 +374,11 @@ export default function AttendanceSystem() {
         </div>
       )}
 
-      {/* SUCCESS SUMMARY VIEW */}
       {view === "success" && scannedUser && (
         <div className="flex-1 flex flex-col items-center justify-center px-8 text-center animate-in zoom-in duration-300">
           <div className="w-24 h-24 bg-green-50 rounded-[2rem] flex items-center justify-center mb-6 text-green-500 border border-green-100 shadow-sm">
             <ShieldCheck size={48} />
           </div>
-
           <h3 className="text-2xl font-black text-gray-900 capitalize">
             {scannedUser.name}
           </h3>
@@ -367,7 +414,6 @@ export default function AttendanceSystem() {
               </span>
             </div>
           </div>
-
           <p className="mt-8 text-[10px] font-black text-gray-300 uppercase animate-pulse">
             Ready for next scan...
           </p>

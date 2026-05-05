@@ -57,6 +57,7 @@ export default function RegisterEmpTile() {
   const [error, setError] = useState("");
   const [faceMatcher, setFaceMatcher] = useState(null);
   const [allDescriptors, setAllDescriptors] = useState([]);
+  const [facingMode, setFacingMode] = useState("user");
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -102,11 +103,20 @@ export default function RegisterEmpTile() {
 
   // Start camera when entering Step 2 (Capture)
   useEffect(() => {
-    if (step === 2) {
+    if (step === 2 || (step === 1 && isQuickScanning)) {
       const startCamera = async () => {
         try {
+          // Clean up previous stream to allow hardware switching
+          if (streamRef.current) {
+            streamRef.current.getTracks().forEach((t) => t.stop());
+          }
+
           const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: "user" },
+            video: {
+              facingMode: facingMode,
+              width: { ideal: 640 },
+              height: { ideal: 640 },
+            },
           });
           streamRef.current = stream;
           if (videoRef.current) videoRef.current.srcObject = stream;
@@ -116,7 +126,7 @@ export default function RegisterEmpTile() {
       };
       startCamera();
     }
-  }, [step]);
+  }, [step, facingMode, isQuickScanning]);
 
   const stopStream = () => {
     if (streamRef.current)
@@ -394,8 +404,18 @@ export default function RegisterEmpTile() {
                       autoPlay
                       playsInline
                       muted
-                      className="w-full h-full object-cover scale-x-[-1]"
+                      className={`w-full h-full object-cover ${facingMode === "user" ? "scale-x-[-1]" : ""}`}
                     />
+                    <button
+                      onClick={() =>
+                        setFacingMode((prev) =>
+                          prev === "user" ? "environment" : "user",
+                        )
+                      }
+                      className="absolute top-6 right-6 p-4 bg-white/20 backdrop-blur-xl border border-white/30 rounded-2xl text-white active:scale-90 transition-all z-50"
+                    >
+                      <RefreshCw size={24} />
+                    </button>
                     {isRegistering && (
                       <div className="absolute inset-0 bg-[#028bcc]/20 flex items-center justify-center backdrop-blur-[2px]">
                         <Loader2
