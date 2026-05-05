@@ -17,6 +17,9 @@ import {
 import * as faceapi from "face-api.js";
 import Swal from "sweetalert2";
 
+const MODEL_URL =
+  "https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights";
+
 export default function AttendanceSystem() {
   const [view, setView] = useState("dashboard"); // dashboard, camera, success
   const [showSelection, setShowSelection] = useState(false);
@@ -25,42 +28,69 @@ export default function AttendanceSystem() {
   const [scannedUser, setScannedUser] = useState(null);
   const [error, setError] = useState("");
   const [facingMode, setFacingMode] = useState("user");
+  const [modelStatus, setModelStatus] = useState("idle"); // idle | loading | ready | error
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
-  const isSwitchingRef = useRef(false); // guard against double-tap
+  const isSwitchingRef = useRef(false);
+  const modelsLoadedRef = useRef(false); // guard — load only once
+
+  // ── Preload models as soon as component mounts ─────────────────────────────
+  useEffect(() => {
+    if (modelsLoadedRef.current) return;
+    setModelStatus("loading");
+    Promise.all([
+      faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+    ])
+      .then(() => {
+        modelsLoadedRef.current = true;
+        setModelStatus("ready");
+      })
+      .catch((err) => {
+        console.error("Model load failed:", err);
+        setModelStatus("error");
+      });
+  }, []);
 
   /** Fully release the active camera stream. */
   const releaseStream = () => {
-    if (videoRef.current) {
-      videoRef.current.srcObject = null; // detach first so browser frees hardware ref
-    }
+    if (videoRef.current) videoRef.current.srcObject = null;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
   };
 
-  /** Open camera with the given facingMode, retrying with relaxed constraints if needed. */
+  /**
+   * Open camera with progressive fallback:
+   *   1. exact facingMode + HD resolution
+   *   2. soft facingMode + SD resolution
+   *   3. bare facingMode string only
+   *   4. { video: true } — no constraints at all (last resort)
+   */
   const openCamera = async (facing) => {
-    // Try strict 'exact' first — routes directly to the target lens on mobile
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { exact: facing }, width: { ideal: 1280 }, height: { ideal: 720 } },
-      });
-      streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
-      return;
-    } catch {
-      // exact failed (common on iOS simulator / single-cam devices) — fall through
-    }
+    const attempts = [
+      { video: { facingMode: { exact: facing }, width: { ideal: 1280 }, height: { ideal: 720 } } },
+      { video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } } },
+      { video: { facingMode: facing } },
+      { video: true },
+    ];
 
-    // Retry with soft constraint (no 'exact')
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 640 } },
-    });
-    streamRef.current = stream;
-    if (videoRef.current) videoRef.current.srcObject = stream;
+    let lastErr;
+    for (const constraints of attempts) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        streamRef.current = stream;
+        if (videoRef.current) videoRef.current.srcObject = stream;
+        return; // success
+      } catch (err) {
+        lastErr = err;
+        console.warn("Camera attempt failed:", JSON.stringify(constraints), err.message);
+      }
+    }
+    throw lastErr; // all 4 attempts failed
   };
 
   // --- 1. START TERMINAL ---
@@ -69,19 +99,29 @@ export default function AttendanceSystem() {
     setView("camera");
     setError("");
 
-    try {
-      const URL =
-        "https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights";
-      await Promise.all([
-        faceapi.nets.ssdMobilenetv1.loadFromUri(URL),
-        faceapi.nets.faceLandmark68Net.loadFromUri(URL),
-        faceapi.nets.faceRecognitionNet.loadFromUri(URL),
-      ]);
+    // If models are still loading, wait for them (max 20s)
+    if (!modelsLoadedRef.current) {
+      setError("Loading AI models… please wait.");
+      const waited = await new Promise((resolve) => {
+        let tries = 0;
+        const poll = setInterval(() => {
+          tries++;
+          if (modelsLoadedRef.current) { clearInterval(poll); resolve(true); }
+          if (tries > 40) { clearInterval(poll); resolve(false); }
+        }, 500);
+      });
+      if (!waited) {
+        setError("AI models failed to load. Check your internet and try again.");
+        return;
+      }
+      setError("");
+    }
 
-      releaseStream();
-      await openCamera(facingMode);
-    } catch (err) {
-      setError("Camera blocked or models missing.");
+    releaseStream();
+    try {
+      await openCamera(punchMode === mode ? facingMode : "user");
+    } catch {
+      setError("Camera unavailable. Please grant camera permission and try again.");
     }
   };
 
@@ -256,15 +296,36 @@ export default function AttendanceSystem() {
             className="group relative w-full h-full bg-white rounded-[2.5rem] shadow-xl shadow-blue-100/40 border border-gray-50 flex flex-col items-center justify-center gap-3 active:scale-95 transition-all duration-200"
           >
             <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center text-[#028bcc] group-hover:bg-[#028bcc] group-hover:text-white transition-colors">
-              <UserCheck size={28} strokeWidth={2.5} />
+              {modelStatus === "loading" ? (
+                <Loader2 size={28} className="animate-spin" />
+              ) : (
+                <UserCheck size={28} strokeWidth={2.5} />
+              )}
             </div>
             <div className="text-center px-2">
               <h3 className="text-[15px] font-black text-gray-800 leading-tight">
                 Attendance
               </h3>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter mt-0.5">
-                Punch In/Out
-              </p>
+              {modelStatus === "loading" && (
+                <p className="text-[9px] font-black text-amber-500 uppercase tracking-tight mt-0.5 animate-pulse">
+                  Loading AI…
+                </p>
+              )}
+              {modelStatus === "ready" && (
+                <p className="text-[9px] font-black text-emerald-500 uppercase tracking-tight mt-0.5">
+                  ● Ready
+                </p>
+              )}
+              {modelStatus === "error" && (
+                <p className="text-[9px] font-black text-red-400 uppercase tracking-tight mt-0.5">
+                  ⚠ No internet
+                </p>
+              )}
+              {modelStatus === "idle" && (
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter mt-0.5">
+                  Punch In/Out
+                </p>
+              )}
             </div>
           </button>
         </div>
