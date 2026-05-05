@@ -44,13 +44,18 @@ export default function AttendanceSystem() {
         faceapi.nets.faceRecognitionNet.loadFromUri(URL),
       ]);
 
-      // Release current stream if any before starting a new one
+      // 1. Clear existing stream Ref to avoid parallel access
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facingMode, width: 640, height: 640 },
+        video: {
+          facingMode: facingMode, // Uses the current state
+          width: { ideal: 640 },
+          height: { ideal: 640 },
+        },
       });
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
@@ -62,17 +67,24 @@ export default function AttendanceSystem() {
   // --- CAMERA SWITCH LOGIC ---
   const toggleCamera = async () => {
     if (isProcessing) return;
+
+    // 1. Force release hardware immediately
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
+    // 2. Update state to trigger restart
     const newMode = facingMode === "user" ? "environment" : "user";
     setFacingMode(newMode);
 
-    // Release current tracks
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-    }
-
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: newMode, width: 640, height: 640 },
+        video: {
+          facingMode: newMode,
+          width: { ideal: 640 },
+          height: { ideal: 640 },
+        },
       });
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
@@ -335,7 +347,7 @@ export default function AttendanceSystem() {
               autoPlay
               playsInline
               muted
-              className="w-full h-full object-cover scale-x-[-1]"
+              className={`w-full h-full object-cover ${facingMode === "user" ? "scale-x-[-1]" : ""}`}
             />
             {isProcessing && (
               <div className="absolute inset-0 bg-[#028bcc]/20 backdrop-blur-[2px] flex items-center justify-center">

@@ -141,12 +141,16 @@ export default function RegisterEmpTile() {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       streamRef.current = stream;
 
-      await new Promise((r) => setTimeout(r, 100));
       if (videoRef.current) videoRef.current.srcObject = stream;
 
-      await new Promise((r) => setTimeout(r, 1500));
-
       if (!videoRef.current) throw new Error("Camera not initialized.");
+
+      await new Promise((resolve) => {
+        if (videoRef.current.readyState >= 2) resolve();
+        else videoRef.current.onloadedmetadata = () => resolve();
+      });
+
+      await new Promise((r) => setTimeout(r, 500));
 
       const detection = await faceapi
         .detectSingleFace(videoRef.current)
