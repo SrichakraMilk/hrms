@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ChangePwdModal from "./changepwd";
 import Image from "next/image";
 import Link from "next/link";
@@ -16,9 +16,16 @@ import {
 } from "lucide-react";
 
 export default function Header() {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false); 
   const [isPwdModalOpen, setIsPwdModalOpen] = useState(false);
   const pathname = usePathname();
+  const [userRole, setUserRole] = useState(" ");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setUserRole(localStorage.getItem("user_role") || " ");
+    }
+  }, []);
 
   const menuItems = [
     {
@@ -26,7 +33,12 @@ export default function Header() {
       href: "/Maindash",
       icon: <LayoutDashboard size={18} />,
     },
-    { name: "Attendance", href: "/Attendance", icon: <UserCheck size={18} /> },
+    {
+      name: "Attendance logs",
+      href: "/Attendance",
+      icon: <UserCheck size={18} />,
+      securityHidden: true,
+    },
     { name: "Profile", href: "/Profile", icon: <User size={18} /> },
     {
       name: "Change Password",
@@ -40,6 +52,13 @@ export default function Header() {
       color: "text-red-500",
     },
   ];
+
+  const filteredMenuItems = menuItems.filter((item) => {
+    // If the item is marked as securityHidden and the user is "Security", remove it
+    if (item.securityHidden && userRole.trim().toLowerCase() === "security")
+      return false;
+    return true;
+  });
 
   return (
     <header className="sticky top-0 z-50">
@@ -75,9 +94,8 @@ export default function Header() {
           />
           <div className="absolute right-6 top-[85px] w-64 bg-white rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.1)] z-50 border border-gray-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="flex flex-col p-2">
-              {menuItems.map((item, index) => {
+              {filteredMenuItems.map((item, index) => {
                 const isActive = pathname === item.href;
-                // FIX: Check if this specific item is the Change Password item
                 const isChangePassword = item.name === "Change Password";
 
                 return (
