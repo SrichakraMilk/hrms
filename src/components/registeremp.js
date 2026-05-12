@@ -200,7 +200,7 @@ export default function RegisterEmpTile() {
       );
       const data = await res.json();
       const list = Array.isArray(data) ? data : data.employees || [];
-      const found = list.find((e) => e.empid?.toString() === employeeId);
+      const found = list.find((e) => e.empid?.toString().toUpperCase().trim() === employeeId.toUpperCase().trim());
       if (found) setEmployeeDetails(found);
       else setError("Employee ID not found.");
     } catch (err) {
