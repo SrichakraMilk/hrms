@@ -7,6 +7,7 @@ import ShiftMgmtTile from "@/components/shiftmgmt";
 import RegisterEmpTile from "@/components/registeremp";
 import ReportsTile from "@/components/reports";
 import EmployeesTile from "@/components/employees";
+import VisitorsTile from "@/components/visitors";
 
 export default function MainDash() {
   // Initialize as null to prevent flickering before useEffect runs
@@ -70,6 +71,13 @@ export default function MainDash() {
           {["Admin", "CEO", "Plant Manager"].includes(userRole) && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-150">
               <ReportsTile />
+            </div>
+          )}
+
+          {/* 6. VISITORS: ONLY HR, Security, or Admin */}
+          {["HR", "Security", "Admin"].includes(userRole) && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-200">
+              <VisitorsTile />
             </div>
           )}
         </div>

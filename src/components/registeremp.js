@@ -59,12 +59,67 @@ export default function RegisterEmpTile() {
   const [allDescriptors, setAllDescriptors] = useState([]);
   const [facingMode, setFacingMode] = useState("user");
 
+  // Statistical Enrollment Tracking States
+  const [allEmployees, setAllEmployees] = useState([]);
+  const [enrolledCount, setEnrolledCount] = useState(0);
+  const [notEnrolledCount, setNotEnrolledCount] = useState(0);
+  const [unenrolledList, setUnenrolledList] = useState([]);
+  const [loadingStats, setLoadingStats] = useState(false);
+
   const videoRef = useRef(null);
   const streamRef = useRef(null);
 
-  // 1. INITIALIZE MODELS & FETCH DESCRIPTORS
+  // 1. INITIALIZE MODELS & FETCH DESCRIPTORS & STATS
+  const fetchStatsAndData = async () => {
+    setLoadingStats(true);
+    try {
+      const token = localStorage.getItem("auth_token");
+      const [res, empRes] = await Promise.all([
+        fetch("https://production.srichakramilk.com/api/hr/face/descriptors", {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch("https://production.srichakramilk.com/api/hr/employees", {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+
+      const data = await res.json();
+      const list = data.descriptors || [];
+      setAllDescriptors(list);
+
+      const empData = await empRes.json();
+      const empList = Array.isArray(empData) ? empData : empData.employees || [];
+      
+      // Keep only active employees for stats tracking
+      const activeEmps = empList.filter((e) => e.isActive !== false);
+      setAllEmployees(activeEmps);
+
+      const enrolledIds = new Set(list.map((d) => d.employeeId?.toString()));
+      const enrolled = activeEmps.filter((e) => enrolledIds.has(e._id?.toString()));
+      const unenrolled = activeEmps.filter((e) => !enrolledIds.has(e._id?.toString()));
+
+      setEnrolledCount(enrolled.length);
+      setNotEnrolledCount(unenrolled.length);
+      setUnenrolledList(unenrolled.sort((a, b) => (a.name || "").localeCompare(b.name || "")));
+
+      if (list.length > 0) {
+        const labeled = list.map((item) => {
+          const descriptions = item.descriptors.map(
+            (d) => new Float32Array(d),
+          );
+          return new faceapi.LabeledFaceDescriptors(item.name, descriptions);
+        });
+        setFaceMatcher(new faceapi.FaceMatcher(labeled, 0.6));
+      }
+    } catch (e) {
+      console.error("Failed to load enrollment statistics", e);
+    } finally {
+      setLoadingStats(false);
+    }
+  };
+
   useEffect(() => {
-    const init = async () => {
+    const initModelsAndLoad = async () => {
       try {
         const URL =
           "https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights";
@@ -73,32 +128,14 @@ export default function RegisterEmpTile() {
           faceapi.nets.faceLandmark68Net.loadFromUri(URL),
           faceapi.nets.faceRecognitionNet.loadFromUri(URL),
         ]);
-
-        const token = localStorage.getItem("auth_token");
-        const res = await fetch(
-          "https://production.srichakramilk.com/api/hr/face/descriptors",
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        );
-        const data = await res.json();
-        const list = data.descriptors || [];
-        setAllDescriptors(list);
-
-        if (list.length > 0) {
-          const labeled = list.map((item) => {
-            const descriptions = item.descriptors.map(
-              (d) => new Float32Array(d),
-            );
-            return new faceapi.LabeledFaceDescriptors(item.name, descriptions);
-          });
-          setFaceMatcher(new faceapi.FaceMatcher(labeled, 0.6));
-        }
+        await fetchStatsAndData();
       } catch (e) {
         console.error("Initialization failed", e);
       }
     };
-    if (isOpen) init();
+    if (isOpen) {
+      initModelsAndLoad();
+    }
   }, [isOpen]);
 
   // Start camera when entering Step 2 (Capture)
@@ -243,6 +280,7 @@ export default function RegisterEmpTile() {
       if (res.ok) {
         stopStream();
         setStep(3);
+        fetchStatsAndData(); // Refresh stats in background!
       } else throw new Error("Server rejected enrollment.");
     } catch (err) {
       setError(err.message);
@@ -313,6 +351,26 @@ export default function RegisterEmpTile() {
               {/* STAGE 1: IDENTIFY */}
               {step === 1 && (
                 <div className="space-y-8 animate-in fade-in zoom-in duration-300">
+                  {/* ENROLLMENT STATS SUMMARY */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-emerald-50/60 border border-emerald-100/50 rounded-3xl p-5 flex flex-col justify-center shadow-sm">
+                      <span className="text-[10px] font-black uppercase text-emerald-600/80 tracking-wider">
+                        Enrolled
+                      </span>
+                      <span className="text-3xl font-[900] text-emerald-700 mt-1">
+                        {loadingStats ? "..." : enrolledCount}
+                      </span>
+                    </div>
+                    <div className="bg-amber-50/60 border border-amber-100/50 rounded-3xl p-5 flex flex-col justify-center shadow-sm">
+                      <span className="text-[10px] font-black uppercase text-amber-600/80 tracking-wider">
+                        Not Enrolled
+                      </span>
+                      <span className="text-3xl font-[900] text-amber-700 mt-1">
+                        {loadingStats ? "..." : notEnrolledCount}
+                      </span>
+                    </div>
+                  </div>
+
                   <div className="relative">
                     {!isQuickScanning ? (
                       <button
@@ -338,7 +396,7 @@ export default function RegisterEmpTile() {
                   <div className="relative flex items-center py-2">
                     <div className="flex-grow border-t border-gray-100"></div>
                     <span className="mx-4 text-[10px] font-black text-gray-300 uppercase">
-                      OR Manual
+                      OR Manual ID Search
                     </span>
                     <div className="flex-grow border-t border-gray-100"></div>
                   </div>
@@ -396,6 +454,57 @@ export default function RegisterEmpTile() {
                       Proceed to Capture
                     </button>
                   )}
+
+                  {/* UNENROLLED QUICK ACCESS SECTION */}
+                  <div className="space-y-4 pt-4 border-t border-gray-100">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-[11px] font-black uppercase text-gray-400 tracking-wider">
+                        Quick Enroll (Unenrolled)
+                      </h4>
+                      <span className="text-[10px] font-black bg-amber-50 text-amber-600 px-2.5 py-1 rounded-full uppercase tracking-wider shrink-0">
+                        {unenrolledList.length} remaining
+                      </span>
+                    </div>
+
+                    {loadingStats ? (
+                      <div className="flex flex-col items-center justify-center py-8 gap-2">
+                        <Loader2 size={24} className="animate-spin text-[#028bcc]" />
+                        <span className="text-[10px] font-bold text-gray-300 uppercase">Updating directory...</span>
+                      </div>
+                    ) : unenrolledList.length === 0 ? (
+                      <div className="text-center py-6 text-xs font-bold text-gray-300 uppercase">
+                        🎉 All active employees enrolled!
+                      </div>
+                    ) : (
+                      <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1">
+                        {unenrolledList.map((emp) => (
+                          <div
+                            key={emp._id}
+                            className="bg-gray-50/50 border border-gray-100 rounded-2xl p-4 flex items-center justify-between gap-4"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-black text-gray-800 leading-tight truncate">
+                                {emp.name}
+                              </p>
+                              <p className="text-[10px] font-bold text-gray-400 mt-1">
+                                {emp.empid} • {emp.designation?.name || "No Designation"}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setEmployeeDetails(emp);
+                                setEmployeeId(emp.empid);
+                                setStep(2);
+                              }}
+                              className="bg-[#028bcc] text-white text-[10px] font-black uppercase px-4 py-2.5 rounded-xl hover:bg-blue-600 active:scale-95 transition-all shadow-sm shrink-0"
+                            >
+                              Enroll
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
