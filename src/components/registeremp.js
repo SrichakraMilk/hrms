@@ -54,6 +54,7 @@ export default function RegisterEmpTile() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [isQuickScanning, setIsQuickScanning] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [error, setError] = useState("");
   const [faceMatcher, setFaceMatcher] = useState(null);
   const [allDescriptors, setAllDescriptors] = useState([]);
@@ -247,6 +248,64 @@ export default function RegisterEmpTile() {
     }
   };
 
+  const handleResetFace = async () => {
+    if (!employeeDetails) return;
+    const result = await Swal.fire({
+      title: "Reset Face ID?",
+      text: `Are you sure you want to delete ${employeeDetails.name}'s face registration? This action is permanent.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Yes, Reset Registration",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#dc2626",
+      cancelButtonColor: "#6b7280",
+      background: "#ffffff",
+      customClass: {
+        popup: "rounded-[2rem] shadow-2xl p-8"
+      }
+    });
+
+    if (!result.isConfirmed) return;
+
+    setIsResetting(true);
+    try {
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch(
+        `https://production.srichakramilk.com/api/hr/face/descriptors?employeeId=${employeeDetails._id}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Server rejected deletion.");
+
+      Swal.fire({
+        title: "Registration Reset",
+        text: "The employee face records have been deleted.",
+        icon: "success",
+        timer: 1500,
+        showConfirmButton: false,
+        background: "#ffffff",
+        customClass: { popup: "rounded-[2rem] shadow-2xl p-8" },
+      });
+
+      // Update local state to reflect that face is reset
+      setEmployeeDetails({ ...employeeDetails, face_id: null });
+      fetchStatsAndData(); // refresh count numbers!
+    } catch (err) {
+      Swal.fire({
+        title: "Error resetting face ID",
+        text: err.message,
+        icon: "error",
+        confirmButtonColor: "#028bcc",
+      });
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   const handleEnroll = async () => {
     setIsRegistering(true);
     setError("");
@@ -410,18 +469,35 @@ export default function RegisterEmpTile() {
                   />
 
                   {employeeDetails && (
-                    <div className="p-6 bg-blue-50/50 rounded-[2rem] border border-blue-100 flex items-center gap-4 animate-in zoom-in">
-                      <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-[#028bcc] shadow-sm">
-                        <User size={28} />
+                    <div className="p-6 bg-blue-50/50 rounded-[2rem] border border-blue-100 flex items-center justify-between gap-4 animate-in zoom-in">
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-[#028bcc] shadow-sm shrink-0">
+                          <User size={28} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-black text-[#028bcc] uppercase mb-1">
+                            Found
+                          </p>
+                          <h4 className="text-xl font-black text-gray-900 leading-none truncate">
+                            {employeeDetails.name}
+                          </h4>
+                          {employeeDetails.face_id && (
+                            <span className="inline-block mt-2 px-2.5 py-0.5 bg-emerald-50 text-emerald-600 text-[9px] font-black uppercase rounded-md border border-emerald-100">
+                              ✓ Enrolled
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-[10px] font-black text-[#028bcc] uppercase mb-1">
-                          Found
-                        </p>
-                        <h4 className="text-xl font-black text-gray-900 leading-none">
-                          {employeeDetails.name}
-                        </h4>
-                      </div>
+
+                      {employeeDetails.face_id && (
+                        <button
+                          onClick={handleResetFace}
+                          disabled={isResetting}
+                          className="bg-red-50 hover:bg-red-100 border border-red-100 text-red-600 text-[10px] font-black uppercase px-4 py-2.5 rounded-xl active:scale-95 transition-all shrink-0"
+                        >
+                          {isResetting ? "Resetting..." : "Reset Face"}
+                        </button>
+                      )}
                     </div>
                   )}
 
@@ -444,15 +520,27 @@ export default function RegisterEmpTile() {
                       )}
                     </button>
                   ) : (
-                    <button
-                      onClick={() => {
-                        stopStream();
-                        setStep(2);
-                      }}
-                      className="w-full bg-[#028bcc] py-6 rounded-[2rem] text-white font-black uppercase tracking-widest shadow-xl active:scale-95 transition-all"
-                    >
-                      Proceed to Capture
-                    </button>
+                    <div className="flex gap-4">
+                      <button
+                        onClick={() => {
+                          setEmployeeId("");
+                          setEmployeeDetails(null);
+                          setError("");
+                        }}
+                        className="flex-1 bg-gray-50 hover:bg-gray-100 border border-gray-100 py-6 rounded-[2rem] text-gray-700 font-black uppercase text-[11px] tracking-widest active:scale-95 transition-all"
+                      >
+                        Clear Search
+                      </button>
+                      <button
+                        onClick={() => {
+                          stopStream();
+                          setStep(2);
+                        }}
+                        className="flex-[2] bg-[#028bcc] py-6 rounded-[2rem] text-white font-black uppercase text-[11px] tracking-widest shadow-xl hover:bg-blue-600 active:scale-95 transition-all"
+                      >
+                        Proceed to Capture
+                      </button>
+                    </div>
                   )}
 
                   {/* UNENROLLED QUICK ACCESS SECTION */}
