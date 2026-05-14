@@ -25,6 +25,7 @@ const InputGroup = ({
   value,
   onChange,
   disabled,
+  type = "text",
 }) => (
   <div className="flex flex-col gap-2">
     <label className="text-[11px] font-black uppercase text-gray-400 ml-1">
@@ -35,7 +36,7 @@ const InputGroup = ({
         {icon}
       </div>
       <input
-        type="text"
+        type={type}
         value={value}
         onChange={onChange}
         disabled={disabled}
@@ -46,8 +47,46 @@ const InputGroup = ({
   </div>
 );
 
+const SelectGroup = ({ label, icon, value, onChange, options, disabled }) => (
+  <div className="flex flex-col gap-2">
+    <label className="text-[11px] font-black uppercase text-gray-400 ml-1">
+      {label}
+    </label>
+    <div className="relative">
+      <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300">
+        {icon}
+      </div>
+      <select
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        className="w-full bg-gray-50 border border-gray-100 rounded-[1.25rem] py-4 pl-11 pr-5 text-sm font-bold text-gray-900 focus:outline-none focus:border-[#028bcc] transition-all disabled:opacity-60 appearance-none"
+      >
+        <option value="">-- Select --</option>
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  </div>
+);
+
+const EMPTY_EMP = {
+  empid: "",
+  name: "",
+  mobile: "",
+  email: "",
+  designation: "",
+  plant: "",
+  department: "",
+  employee_type: "Full-Time",
+};
+
 export default function RegisterEmpTile() {
   const [isOpen, setIsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("face"); // "face" or "employee"
   const [step, setStep] = useState(1); // 1: Identify, 2: Capture, 3: Success
   const [employeeId, setEmployeeId] = useState("");
   const [employeeDetails, setEmployeeDetails] = useState(null);
@@ -55,10 +94,17 @@ export default function RegisterEmpTile() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [isQuickScanning, setIsQuickScanning] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [savingEmp, setSavingEmp] = useState(false);
   const [error, setError] = useState("");
   const [faceMatcher, setFaceMatcher] = useState(null);
   const [allDescriptors, setAllDescriptors] = useState([]);
   const [facingMode, setFacingMode] = useState("user");
+  const [empForm, setEmpForm] = useState(EMPTY_EMP);
+
+  // Lookup Data States
+  const [plants, setPlants] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [designations, setDesignations] = useState([]);
 
   // Statistical Enrollment Tracking States
   const [allEmployees, setAllEmployees] = useState([]);
@@ -75,14 +121,42 @@ export default function RegisterEmpTile() {
     setLoadingStats(true);
     try {
       const token = localStorage.getItem("auth_token");
-      const [res, empRes] = await Promise.all([
+      const [res, empRes, pRes, dRes, desigRes] = await Promise.all([
         fetch("https://production.srichakramilk.com/api/hr/face/descriptors", {
           headers: { Authorization: `Bearer ${token}` },
         }),
         fetch("https://production.srichakramilk.com/api/hr/employees", {
           headers: { Authorization: `Bearer ${token}` },
         }),
+        fetch("https://production.srichakramilk.com/api/plants", {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch("https://production.srichakramilk.com/api/departments", {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch("https://production.srichakramilk.com/api/designations", {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
       ]);
+
+      if (pRes?.ok) {
+        const pData = await pRes.json();
+        setPlants(
+          (pData.plants || pData || []).map((p) => ({ value: p._id, label: p.name }))
+        );
+      }
+      if (dRes?.ok) {
+        const dData = await dRes.json();
+        setDepartments(
+          (dData.departments || dData || []).map((d) => ({ value: d._id, label: d.name }))
+        );
+      }
+      if (desigRes?.ok) {
+        const desigData = await desigRes.json();
+        setDesignations(
+          (desigData.designations || desigData || []).map((d) => ({ value: d._id, label: d.name }))
+        );
+      }
 
       const data = await res.json();
       const list = data.descriptors || [];
@@ -348,6 +422,62 @@ export default function RegisterEmpTile() {
     }
   };
 
+  const handleRegisterEmployee = async () => {
+    if (!empForm.empid || !empForm.name || !empForm.mobile || !empForm.designation || !empForm.plant || !empForm.department) {
+      Swal.fire({
+        title: "Missing Fields",
+        text: "Please fill in all the required fields.",
+        icon: "warning",
+        confirmButtonColor: "#028bcc",
+      });
+      return;
+    }
+
+    setSavingEmp(true);
+    try {
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch("https://production.srichakramilk.com/api/hr/employees", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(empForm),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to register employee");
+
+      Swal.fire({
+        title: "Employee Registered!",
+        text: `${empForm.name} has been successfully registered.`,
+        icon: "success",
+        timer: 1500,
+        showConfirmButton: false,
+        background: "#ffffff",
+        customClass: { popup: "rounded-[2rem] shadow-2xl p-8" },
+      });
+
+      // Clear form and switch to face tab to instantly enroll their face!
+      setEmpForm(EMPTY_EMP);
+      setActiveTab("face");
+      setEmployeeId(data.employee?.empid || empForm.empid);
+      
+      // We can also trigger a re-fetch of stats so they appear in the Unenrolled list immediately!
+      fetchStatsAndData();
+
+    } catch (err) {
+      Swal.fire({
+        title: "Registration Error",
+        text: err.message,
+        icon: "error",
+        confirmButtonColor: "#dc2626",
+      });
+    } finally {
+      setSavingEmp(false);
+    }
+  };
+
   const handleClose = () => {
     stopStream();
     setIsOpen(false);
@@ -392,23 +522,53 @@ export default function RegisterEmpTile() {
             <div className="px-8 pt-10 pb-6 flex items-center justify-between border-b border-gray-50">
               <div>
                 <h2 className="text-2xl font-[900] text-gray-900 tracking-tight">
-                  Face Enrollment
+                  {activeTab === "face" ? "Face Enrollment" : "Employee Registration"}
                 </h2>
-                <p className="text-[10px] font-black text-[#028bcc] uppercase tracking-[0.2em] mt-1">
-                  Stage {step} of 2
-                </p>
+                {activeTab === "face" && (
+                  <p className="text-[10px] font-black text-[#028bcc] uppercase tracking-[0.2em] mt-1">
+                    Stage {step} of 2
+                  </p>
+                )}
               </div>
               <button
                 onClick={handleClose}
-                className="p-3 bg-gray-50 rounded-2xl text-gray-400"
+                className="p-3 bg-gray-50 rounded-2xl text-gray-400 hover:bg-gray-200 transition-colors"
               >
                 <X size={20} />
               </button>
             </div>
 
+            {/* TAB SELECTOR */}
+            {step === 1 && (
+              <div className="px-8 pt-6">
+                <div className="flex p-1 bg-gray-100/50 rounded-2xl border border-gray-100">
+                  <button
+                    onClick={() => setActiveTab("face")}
+                    className={`flex-1 py-3 text-[11px] font-black uppercase tracking-wider rounded-xl transition-all ${
+                      activeTab === "face"
+                        ? "bg-white text-[#028bcc] shadow-sm"
+                        : "text-gray-400 hover:text-gray-600"
+                    }`}
+                  >
+                    Face Enroll
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("employee")}
+                    className={`flex-1 py-3 text-[11px] font-black uppercase tracking-wider rounded-xl transition-all ${
+                      activeTab === "employee"
+                        ? "bg-white text-[#028bcc] shadow-sm"
+                        : "text-gray-400 hover:text-gray-600"
+                    }`}
+                  >
+                    Employee Enroll
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto px-8 py-8">
-              {/* STAGE 1: IDENTIFY */}
-              {step === 1 && (
+              {/* FACE ENROLLMENT: STAGE 1 */}
+              {activeTab === "face" && step === 1 && (
                 <div className="space-y-8 animate-in fade-in zoom-in duration-300">
                   {/* ENROLLMENT STATS SUMMARY */}
                   <div className="grid grid-cols-2 gap-4">
@@ -667,6 +827,104 @@ export default function RegisterEmpTile() {
                     className="w-full bg-gray-900 py-6 rounded-[2rem] text-white font-black uppercase mt-16 active:scale-95 transition-all"
                   >
                     Finish Setup
+                  </button>
+                </div>
+              )}
+
+              {/* EMPLOYEE ENROLLMENT TAB */}
+              {activeTab === "employee" && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-right duration-300">
+                  <div className="grid grid-cols-2 gap-4">
+                    <InputGroup
+                      label="Employee ID"
+                      placeholder="e.g. EMP001"
+                      icon={<User size={18} />}
+                      value={empForm.empid}
+                      onChange={(e) => setEmpForm((p) => ({ ...p, empid: e.target.value }))}
+                      required
+                    />
+                    <InputGroup
+                      label="Full Name"
+                      placeholder="e.g. John Doe"
+                      icon={<User size={18} />}
+                      value={empForm.name}
+                      onChange={(e) => setEmpForm((p) => ({ ...p, name: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <InputGroup
+                      label="Mobile Number"
+                      placeholder="10-digit number"
+                      type="tel"
+                      icon={<Briefcase size={18} />}
+                      value={empForm.mobile}
+                      onChange={(e) => setEmpForm((p) => ({ ...p, mobile: e.target.value }))}
+                      required
+                    />
+                    <InputGroup
+                      label="Email (Optional)"
+                      placeholder="john@example.com"
+                      type="email"
+                      icon={<Briefcase size={18} />}
+                      value={empForm.email}
+                      onChange={(e) => setEmpForm((p) => ({ ...p, email: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <SelectGroup
+                      label="Plant"
+                      icon={<Briefcase size={18} />}
+                      value={empForm.plant}
+                      onChange={(e) => setEmpForm((p) => ({ ...p, plant: e.target.value }))}
+                      options={plants}
+                      required
+                    />
+                    <SelectGroup
+                      label="Department"
+                      icon={<Briefcase size={18} />}
+                      value={empForm.department}
+                      onChange={(e) => setEmpForm((p) => ({ ...p, department: e.target.value }))}
+                      options={departments}
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <SelectGroup
+                      label="Designation"
+                      icon={<Briefcase size={18} />}
+                      value={empForm.designation}
+                      onChange={(e) => setEmpForm((p) => ({ ...p, designation: e.target.value }))}
+                      options={designations}
+                      required
+                    />
+                    <SelectGroup
+                      label="Employee Type"
+                      icon={<Briefcase size={18} />}
+                      value={empForm.employee_type}
+                      onChange={(e) => setEmpForm((p) => ({ ...p, employee_type: e.target.value }))}
+                      options={[
+                        { value: "Full-Time", label: "Full-Time" },
+                        { value: "Part-Time", label: "Part-Time" },
+                        { value: "Contract", label: "Contract" },
+                      ]}
+                      required
+                    />
+                  </div>
+                  
+                  <button
+                    onClick={handleRegisterEmployee}
+                    disabled={savingEmp}
+                    className="w-full bg-[#028bcc] py-6 rounded-[2rem] text-white font-black uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 active:scale-95 transition-all mt-6"
+                  >
+                    {savingEmp ? (
+                      <Loader2 className="animate-spin mx-auto" />
+                    ) : (
+                      "Register Employee"
+                    )}
                   </button>
                 </div>
               )}

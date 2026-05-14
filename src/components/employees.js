@@ -16,6 +16,7 @@ import {
   UserCheck2,
   UserX2,
 } from "lucide-react";
+import Swal from "sweetalert2";
 
 const BASE = "https://production.srichakramilk.com";
 
@@ -25,6 +26,7 @@ export default function EmployeesTile({ onClick }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [resettingId, setResettingId] = useState(null);
 
   const token = () =>
     typeof window !== "undefined" ? localStorage.getItem("auth_token") : "";
@@ -71,6 +73,60 @@ export default function EmployeesTile({ onClick }) {
     setIsOpen(false);
     setSearchQuery("");
     setError("");
+  };
+
+  const handleResetFace = async (emp) => {
+    const result = await Swal.fire({
+      title: "Reset Face ID?",
+      text: `Are you sure you want to delete ${emp.name}'s face registration? This action is permanent.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Yes, Reset Registration",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#dc2626",
+      cancelButtonColor: "#6b7280",
+      background: "#ffffff",
+      customClass: { popup: "rounded-[2rem] shadow-2xl p-8" }
+    });
+
+    if (!result.isConfirmed) return;
+
+    setResettingId(emp._id);
+    try {
+      const res = await fetch(
+        `${BASE}/api/hr/face/descriptors?employeeId=${emp._id}`,
+        {
+          method: "DELETE",
+          headers: headers(),
+        }
+      );
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Server rejected deletion.");
+
+      Swal.fire({
+        title: "Registration Reset",
+        text: "The employee face records have been deleted.",
+        icon: "success",
+        timer: 1500,
+        showConfirmButton: false,
+        background: "#ffffff",
+        customClass: { popup: "rounded-[2rem] shadow-2xl p-8" },
+      });
+
+      setEmployees((prev) =>
+        prev.map((e) => (e._id === emp._id ? { ...e, face_id: null } : e))
+      );
+    } catch (err) {
+      Swal.fire({
+        title: "Error resetting face ID",
+        text: err.message,
+        icon: "error",
+        confirmButtonColor: "#028bcc",
+      });
+    } finally {
+      setResettingId(null);
+    }
   };
 
   // Filter logic
@@ -220,7 +276,8 @@ export default function EmployeesTile({ onClick }) {
                         </div>
 
                         {/* Status Icon/Badge */}
-                        <div className="shrink-0">
+                        {/* Status Icon/Badge */}
+                        <div className="shrink-0 flex flex-col items-end gap-1.5">
                           {emp.isActive !== false ? (
                             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-100/50 rounded-full text-green-600 font-black text-[9px] uppercase tracking-wider">
                               <UserCheck2 size={12} />
@@ -230,6 +287,21 @@ export default function EmployeesTile({ onClick }) {
                             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-50 border border-red-100/50 rounded-full text-red-500 font-black text-[9px] uppercase tracking-wider">
                               <UserX2 size={12} />
                               Inactive
+                            </div>
+                          )}
+
+                          {emp.face_id && (
+                            <div className="flex flex-col items-end gap-1 mt-0.5">
+                              <span className="inline-block px-2 py-0.5 bg-emerald-50 text-emerald-600 text-[8px] font-black uppercase rounded border border-emerald-100">
+                                ✓ Enrolled
+                              </span>
+                              <button
+                                onClick={() => handleResetFace(emp)}
+                                disabled={resettingId === emp._id}
+                                className="text-[8px] font-black uppercase tracking-wider text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2 py-1 rounded border border-red-100 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                              >
+                                {resettingId === emp._id ? "..." : "Reset Face"}
+                              </button>
                             </div>
                           )}
                         </div>
