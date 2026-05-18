@@ -82,16 +82,16 @@ export default function AttendanceLogsTile({ onClick }) {
     setError("");
   };
 
-  const formatTime = (timeStr) => {
-    if (!timeStr) return "--:--";
+  const formatTime = (timeVal) => {
+    if (!timeVal) return "--:--";
     try {
-      const [hours, minutes] = timeStr.split(":");
-      const date = new Date();
-      date.setHours(parseInt(hours, 10));
-      date.setMinutes(parseInt(minutes, 10));
-      return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+      // checkIn/checkOut are stored as full ISO Date objects in MongoDB,
+      // so parse them with new Date() — same approach as plantautomation hr-management.
+      const d = new Date(timeVal);
+      if (isNaN(d.getTime())) return "--:--";
+      return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
     } catch {
-      return timeStr;
+      return "--:--";
     }
   };
 
