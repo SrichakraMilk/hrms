@@ -9,6 +9,8 @@ import ReportsTile from "@/components/reports";
 import EmployeesTile from "@/components/employees";
 import VisitorsTile from "@/components/visitors";
 import AttendanceLogsTile from "@/components/attendancelogs";
+import SecurityDashboardTile from "@/components/securitydashboard";
+
 
 export default function MainDash() {
   // Initialize as null to prevent flickering before useEffect runs
@@ -86,6 +88,13 @@ export default function MainDash() {
           {["HR", "Admin"].includes(userRole) && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-300">
               <AttendanceLogsTile />
+            </div>
+          )}
+
+          {/* 8. SECURITY DASHBOARD: Security and Admin */}
+          {["Security", "Admin"].includes(userRole) && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-350">
+              <SecurityDashboardTile />
             </div>
           )}
         </div>
