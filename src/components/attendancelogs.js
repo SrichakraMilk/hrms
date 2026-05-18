@@ -18,9 +18,12 @@ import {
 const BASE = "https://production.srichakramilk.com";
 
 export default function AttendanceLogsTile({ onClick }) {
+  const todayStr = () => new Date().toISOString().slice(0, 10);
+
   const [isOpen, setIsOpen] = useState(false);
   const [logs, setLogs] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedDate, setSelectedDate] = useState(todayStr());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -32,18 +35,18 @@ export default function AttendanceLogsTile({ onClick }) {
     Authorization: `Bearer ${token()}`,
   });
 
-  const fetchLogs = async () => {
+  const fetchLogs = async (date) => {
     setLoading(true);
     setError("");
     try {
-      // We fetch all attendance logs. (The backend supports date filters, but we fetch default/recent).
-      const res = await fetch(`${BASE}/api/hr/attendance`, {
+      const qs = date ? `?date=${date}` : "";
+      const res = await fetch(`${BASE}/api/hr/attendance${qs}`, {
         headers: headers(),
       });
       const data = await res.json();
-      
+
       if (!res.ok) throw new Error(data.error || "Failed to fetch attendance logs.");
-      
+
       const records = data.attendance || [];
       // Sort newest dates first, then by employee name
       const sorted = records.sort((a, b) => {
@@ -63,12 +66,13 @@ export default function AttendanceLogsTile({ onClick }) {
 
   useEffect(() => {
     if (isOpen) {
-      fetchLogs();
+      fetchLogs(selectedDate);
     }
-  }, [isOpen]);
+  }, [isOpen, selectedDate]);
 
   const handleOpen = () => {
     if (onClick) onClick();
+    setSelectedDate(todayStr());
     setIsOpen(true);
   };
 
@@ -166,8 +170,9 @@ export default function AttendanceLogsTile({ onClick }) {
               </button>
             </div>
 
-            {/* Sticky Search bar */}
-            <div className="px-8 py-4 bg-white border-b border-gray-50 shrink-0">
+            {/* Sticky Search + Date Filter */}
+            <div className="px-8 py-4 bg-white border-b border-gray-50 shrink-0 space-y-3">
+              {/* Search */}
               <div className="relative">
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">
                   <Search size={18} />
@@ -178,6 +183,20 @@ export default function AttendanceLogsTile({ onClick }) {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-4 pl-11 pr-5 text-sm font-bold text-gray-900 placeholder-gray-400 focus:outline-none focus:border-[#028bcc] focus:bg-white transition-all shadow-inner"
+                />
+              </div>
+
+              {/* Date Picker */}
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#028bcc] pointer-events-none">
+                  <CalendarDays size={17} />
+                </div>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="w-full bg-blue-50/60 border border-[#028bcc]/20 rounded-2xl py-3.5 pl-11 pr-5 text-sm font-bold text-gray-900 focus:outline-none focus:border-[#028bcc] focus:bg-white transition-all shadow-inner"
                 />
               </div>
             </div>
